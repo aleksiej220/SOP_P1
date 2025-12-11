@@ -1,0 +1,59 @@
+#include "DataStructures/avl_map.h"
+
+void print_key_value(int key, void* value) {
+    printf("Klucz: %d, Wartość: %s\n", key, (char*)value);
+}
+
+int main(int argc, char* argv[]){
+    
+    // Tworzenie mapy
+    AVLMap* map = avl_map_create();
+    
+    // Wstawianie elementów
+    avl_map_insert(map, 10, "Dziesięć");
+    avl_map_insert(map, 20, "Dwadzieścia");
+    avl_map_insert(map, 5, "Pięć");
+    avl_map_insert(map, 15, "Piętnaście");
+    avl_map_insert(map, 25, "Dwadzieścia pięć");
+    
+    printf("Rozmiar mapy: %d\n", avl_map_size(map));
+    printf("Czy pusta? %s\n", avl_map_is_empty(map) ? "Tak" : "Nie");
+    
+    // Wyszukiwanie
+    printf("\nWartość dla klucza 15: %s\n", (char*)avl_map_get(map, 15));
+    printf("Czy zawiera klucz 30? %s\n", avl_map_contains(map, 30) ? "Tak" : "Nie");
+    
+    // Przechodzenie
+    printf("\nWszystkie elementy (posortowane):\n");
+    avl_map_inorder_traversal(map, print_key_value);
+    
+    // Min/max
+    printf("\nMinimalny klucz: %d\n", avl_map_min_key(map));
+    printf("Maksymalny klucz: %d\n", avl_map_max_key(map));
+    
+    // Usuwanie
+    printf("\nUsuwanie klucza 20...\n");
+    avl_map_remove(map, 20);
+    
+    printf("Rozmiar po usunięciu: %d\n", avl_map_size(map));
+    printf("Czy zawiera klucz 20? %s\n", avl_map_contains(map, 20) ? "Tak" : "Nie");
+    
+    // Aktualizacja wartości
+    printf("\nAktualizacja wartości dla klucza 10...\n");
+    avl_map_insert(map, 10, "Dziesiątka");
+    printf("Nowa wartość dla klucza 10: %s\n", (char*)avl_map_get(map, 10));
+    
+    // Przechodzenie ponowne
+    printf("\nWszystkie elementy (posortowane):\n");
+    avl_map_inorder_traversal(map, print_key_value);
+
+    // Czyszczenie
+    printf("\nCzyszczenie mapy...\n");
+    avl_map_clear(map);
+    printf("Rozmiar po wyczyszczeniu: %d\n", avl_map_size(map));
+    
+    // Zwalnianie pamięci
+    avl_map_destroy(map);
+    
+    return 0;
+}
