@@ -6,6 +6,12 @@
 #include <unistd.h>
 #include <errno.h>
 #include <sys/stat.h>
+#include <sys/mman.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+#include "../DataStructures/avl_map.h"
+#include "copying.h"
+#include "controlPanel.h"
 
 #define MAX_WATCHES 8192   // Możesz zwiększyć
 
@@ -15,7 +21,7 @@ struct WatchEntry{
     char path[1024];
 };
 typedef struct WatchEntry WatchEntry;
-WatchEntry watch_list[MAX_WATCHES];
+AVLMap *watch_list;
 int watch_count = 0;
 
 /* ---------------------------------------------------------
@@ -78,7 +84,7 @@ void add_watch_recursive(int fd, const char *dirpath, uint32_t mask)
     closedir(dir);
 }
 
-void handle_event(struct inotify_event *ev)
+void handle_event(struct inotify_event* ev, const copy_info* info)
 {
     // Znajdź ścieżkę powiązaną z tym wd
     const char *path = NULL;
@@ -150,34 +156,66 @@ void handle_event(struct inotify_event *ev)
         // TODO: on_overflow(...)
     }
 }
+controlPanel* initialize_watch(copy_info* info){
 
-void commit_watch(const char* path)
-{
-    int fd = inotify_init1(0);
+    watch_list = avl_map_create();
 
-    uint32_t mask =
-        IN_ALL_EVENTS;
-
-    // Dodaj obserwację na katalog i wszystkie podkatalogi
-    add_watch_recursive(fd, path, mask);
-
-    char buf[4096]
-        __attribute__((aligned(__alignof__(struct inotify_event))));
-
-    // Główna pętla
-    while (1) {
-        ssize_t len = read(fd, buf, sizeof(buf));
-        if (len <= 0) {
-            perror("read");
-            continue;
-        }
-        char *ptr = buf;
-        while (ptr < buf + len) {
-            struct inotify_event *ev = (struct inotify_event *)ptr;
-            handle_event(ev);
-            ptr += sizeof(struct inotify_event) + ev->len;
-        }
+    //wspoldzielony panel sterowania
+    controlPanel *panel = mmap(NULL, sizeof(controlPanel),PROT_READ | PROT_WRITE,MAP_SHARED | MAP_ANONYMOUS,-1, 0);
+    panel->watch = 1;
+    printf("PRZED\n");
+    pid_t pid = fork();
+    printf("PO\n");
+    if(pid<0){
+        //blad
+        printf("BLAD FORKOWANIA\n");
+        return panel;
     }
+    else if(pid == 0){
+        // kod dziecka
+        int fd = inotify_init1(0);
+        info->fd = fd;
+        uint32_t mask =
+            IN_ALL_EVENTS;
 
-    return;
+        int flags = fcntl(fd, F_GETFL, 0);
+        fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+
+        // Dodaj obserwację
+        add_watch_recursive(fd, info->root_src, mask);
+
+        char buf[4096]
+            __attribute__((aligned(__alignof__(struct inotify_event))));
+
+        printf("Started\n");
+        int iterations = 0;
+        while (panel->watch) {
+            iterations++;
+            ssize_t len = read(fd, buf, sizeof(buf));
+            if (len < 0) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    // brak zdarzeń — NIE blokuje programu
+                    sleep(0.01); // opcjonalnie: 10 ms, żeby nie mielić CPU
+                    continue;
+                } else {
+                    perror("read");
+                    break;
+                }
+            }
+
+            char *ptr = buf;
+            while (ptr < buf + len) {
+                struct inotify_event *ev = (struct inotify_event *)ptr;
+                handle_event(ev, info);
+                ptr += sizeof(struct inotify_event) + ev->len;
+            }
+        }
+        printf("Iterations: %i\n",iterations);
+        exit(0);
+        return panel;
+    }
+    else{
+        //kod rodzica
+        return panel;
+    }
 }

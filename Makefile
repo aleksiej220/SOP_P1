@@ -1,25 +1,21 @@
-CC = gcc
-CFLAGS = -Wall -Wextra -std=c17 -O2
-TARGET = avl_map_demo
-OBJF = Objects
-OBJ = $(OBJF)/avl_map.o $(OBJF)/main.o
+override CFLAGS=-std=c17 -Wall -Wextra -Wshadow -Wno-unused-parameter -Wno-unused-const-variable -g -O0 -fsanitize=address,undefined,leak
 
+ifdef CI
+override CFLAGS=-std=c17 -Wall -Wextra -Wshadow -Werror -Wno-unused-parameter -Wno-unused-const-variable
+endif
 
-all: $(TARGET)
+NAME=program
 
-$(TARGET): $(OBJ)
-	$(CC) $(CFLAGS) -o $(TARGET) $(OBJ)
+.PHONY: clean all
 
-$(OBJF)/avl_map.o: DataStructures/avl_map.c DataStructures/avl_map.h
-	$(CC) $(CFLAGS) -c DataStructures/avl_map.c -o $(OBJF)/avl_map.o
+all: ${NAME}
 
-$(OBJF)/main.o: main.c DataStructures/avl_map.h
-	$(CC) $(CFLAGS) -c main.c -o $(OBJF)/main.o
+SOURCES=$(shell find src -type f -iname '*.c')
+
+OBJECTS=$(foreach x, $(basename $(SOURCES)), $(x).o)
+
+$(NAME): $(OBJECTS)
+	$(CC) $^ ${CFLAGS} -o $@
 
 clean:
-	rm -f $(OBJ) $(TARGET)
-
-run: $(TARGET)
-	./$(TARGET)
-
-.PHONY: all clean run
+	rm -f $(NAME) $(OBJECTS)

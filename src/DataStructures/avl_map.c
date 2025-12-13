@@ -1,10 +1,11 @@
 #include "avl_map.h"
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 // Pomocnicze funkcje
 static int max(int a, int b) {
-    return (a > b) ? a : b;
+    return a>b ? a : b;
 }
 
 static int height(AVLNode* node) {
@@ -15,7 +16,7 @@ static int balance_factor(AVLNode* node) {
     return node ? height(node->left) - height(node->right) : 0;
 }
 
-static AVLNode* create_node(int key, void* value) {
+static AVLNode* create_node(char* key, void* value) {
     AVLNode* node = (AVLNode*)malloc(sizeof(AVLNode));
     if (node) {
         node->key = key;
@@ -63,15 +64,15 @@ static AVLNode* find_min_node(AVLNode* node) {
 }
 
 // Wstawianie (rekurencyjne)
-static AVLNode* insert_node(AVLNode* node, int key, void* value, bool* inserted) {
+static AVLNode* insert_node(AVLNode* node, char* key, void* value, bool* inserted) {
     if (!node) {
         *inserted = true;
         return create_node(key, value);
     }
-
-    if (key < node->key) {
+    int comp = strcmp(key, node->key);
+    if (comp < 0) {
         node->left = insert_node(node->left, key, value, inserted);
-    } else if (key > node->key) {
+    } else if (comp > 0) {
         node->right = insert_node(node->right, key, value, inserted);
     } else {
         // Klucz już istnieje - aktualizacja wartości
@@ -87,23 +88,23 @@ static AVLNode* insert_node(AVLNode* node, int key, void* value, bool* inserted)
     int balance = balance_factor(node);
 
     // Lewa lewa
-    if (balance > 1 && key < node->left->key) {
+    if (balance > 1 && strcmp(key,node->left->key) < 0) {
         return rotate_right(node);
     }
 
     // Prawa prawa
-    if (balance < -1 && key > node->right->key) {
+    if (balance < -1 && strcmp(key, node->right->key) > 0) {
         return rotate_left(node);
     }
 
     // Lewa prawa
-    if (balance > 1 && key > node->left->key) {
+    if (balance > 1 && strcmp(key,node->left->key) > 0) {
         node->left = rotate_left(node->left);
         return rotate_right(node);
     }
 
     // Prawa lewa
-    if (balance < -1 && key < node->right->key) {
+    if (balance < -1 && strcmp(key,node->right->key)< 0) {
         node->right = rotate_right(node->right);
         return rotate_left(node);
     }
@@ -112,15 +113,15 @@ static AVLNode* insert_node(AVLNode* node, int key, void* value, bool* inserted)
 }
 
 // Usuwanie (rekurencyjne)
-static AVLNode* delete_node(AVLNode* root, int key, bool* removed) {
+static AVLNode* delete_node(AVLNode* root, char* key, bool* removed) {
     if (!root) {
         *removed = false;
         return NULL;
     }
 
-    if (key < root->key) {
+    if (strcmp(key,root->key)<0) {
         root->left = delete_node(root->left, key, removed);
-    } else if (key > root->key) {
+    } else if (strcmp(key,root->key)>0) {
         root->right = delete_node(root->right, key, removed);
     } else {
         *removed = true;
@@ -180,12 +181,12 @@ static AVLNode* delete_node(AVLNode* root, int key, bool* removed) {
 }
 
 // Wyszukiwanie (rekurencyjne)
-static AVLNode* search_node(AVLNode* node, int key) {
+static AVLNode* search_node(AVLNode* node, char* key) {
     if (!node || node->key == key) {
         return node;
     }
     
-    if (key < node->key) {
+    if (strcmp(key,node->key)<0) {
         return search_node(node->left, key);
     }
     
@@ -193,7 +194,7 @@ static AVLNode* search_node(AVLNode* node, int key) {
 }
 
 // Przechodzenie inorder (rekurencyjne)
-static void inorder_traversal_node(AVLNode* node, void (*func)(int, void*)) {
+static void inorder_traversal_node(AVLNode* node, void (*func)(char*, void*)) {
     if (node) {
         inorder_traversal_node(node->left, func);
         func(node->key, node->value);
@@ -236,7 +237,7 @@ void avl_map_clear(AVLMap* map) {
     }
 }
 
-bool avl_map_insert(AVLMap* map, int key, void* value) {
+bool avl_map_insert(AVLMap* map, char* key, void* value) {
     if (!map) return false;
     
     bool inserted = false;
@@ -249,14 +250,14 @@ bool avl_map_insert(AVLMap* map, int key, void* value) {
     return inserted;
 }
 
-void* avl_map_get(AVLMap* map, int key) {
+void* avl_map_get(AVLMap* map, char* key) {
     if (!map) return NULL;
     
     AVLNode* node = search_node(map->root, key);
     return node ? node->value : NULL;
 }
 
-bool avl_map_remove(AVLMap* map, int key) {
+bool avl_map_remove(AVLMap* map, char* key) {
     if (!map) return false;
     
     bool removed = false;
@@ -269,7 +270,7 @@ bool avl_map_remove(AVLMap* map, int key) {
     return removed;
 }
 
-bool avl_map_contains(AVLMap* map, int key) {
+bool avl_map_contains(AVLMap* map, char* key) {
     return map && search_node(map->root, key) != NULL;
 }
 
@@ -281,15 +282,15 @@ bool avl_map_is_empty(AVLMap* map) {
     return map ? map->size == 0 : true;
 }
 
-void avl_map_inorder_traversal(AVLMap* map, void (*func)(int, void*)) {
+void avl_map_inorder_traversal(AVLMap* map, void (*func)(char*, void*)) {
     if (map && func) {
         inorder_traversal_node(map->root, func);
     }
 }
 
-int avl_map_min_key(AVLMap* map) {
+char* avl_map_min_key(AVLMap* map) {
     if (!map || !map->root) {
-        return -1; // lub inna wartość oznaczająca błąd
+        return NULL; // lub inna wartość oznaczająca błąd
     }
     
     AVLNode* current = map->root;
@@ -300,9 +301,9 @@ int avl_map_min_key(AVLMap* map) {
     return current->key;
 }
 
-int avl_map_max_key(AVLMap* map) {
+char* avl_map_max_key(AVLMap* map) {
     if (!map || !map->root) {
-        return -1; // lub inna wartość oznaczająca błąd
+        return NULL; // lub inna wartość oznaczająca błąd
     }
     
     AVLNode* current = map->root;

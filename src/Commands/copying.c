@@ -1,23 +1,23 @@
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+
+#ifndef _XOPEN_SOURCE
+#define _XOPEN_SOURCE 700
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <libgen.h>
+#include "copying.h"
+#include <errno.h>
 #include <dirent.h>
 #include <string.h>
-#include <libgen.h>
-#include <errno.h>
-#define PATH_MAX 4096
-
-struct copy_info{
-    char* root_src; 
-    char* root_dst;
-    int id;
-};
-typedef struct copy_info copy_info;
-
-
+#include <limits.h>
 int get_real_symlink_path(const char *src, char* path){
 
     //Najpierw wydobądźmy dyrektorium
