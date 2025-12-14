@@ -1,6 +1,7 @@
 struct controlPanel{
     int watch;
-    int list;
+    int processing;
     int restore;
+    int terminate;
 };
 typedef struct controlPanel controlPanel;

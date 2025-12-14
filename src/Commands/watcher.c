@@ -15,16 +15,21 @@
 #include "controlPanel.h"
 
 #define MAX_WATCHES INT32_MAX   // Możesz zwiększyć
-#define MAX_DIGITS 20
+#define MAX_DIGITS 20 //mak
 // struktura przechowujaca wd->path
 //zmienne procesowe globalne, ale ustawiane tylko dla tego procesu
 AVLMap *watch_list;
 
-
-void clean_each(int key, void* value) {
+void clean(Key key, Value value) {
+    printf("CLEANING %i,%s\n",*(int*)key,(char*) value);
+    free(key);
     free(value);
 }
-
+int compare(Key a,Key b){
+    int* p1 = (int*)a;
+    int* p2 = (int*)b;
+    return *p1 - *p2;
+}
 int watch_count = 0;
 /* ---------------------------------------------------------
    Dodaj WATCH i zapamiętaj go
@@ -37,9 +42,10 @@ int add_watch(int fd, const char *path, uint32_t mask)
                 path, strerror(errno));
         return -1;
     }
-
+    int* key = malloc(sizeof(int));
+    *key = wd;
     if (watch_count < MAX_WATCHES) {
-        avl_map_insert(watch_list,wd,strdup(path));
+        avl_map_insert(watch_list,key,strdup(path));
         watch_count++;
     }
 
@@ -84,54 +90,52 @@ void add_watch_recursive(int fd, const char *dirpath, uint32_t mask)
     closedir(dir);
 }
 
-void handle_event(struct inotify_event* ev, const copy_info* info)
+void handle_event(struct inotify_event* ev, const copy_info* info,uint32_t mask)
 {
+
+    char src[4096];
+    char dst[4096];
     // Znajdź ścieżkę powiązaną z tym wd
-    char *path = NULL;
-    if(!avl_map_contains(watch_list,ev->wd)){
-        printf("EVENTA %d NIE MA W LISCIE\n",ev->wd);
+    if(!avl_map_contains(watch_list,&(ev->wd))){
+        return;
+        //printf("EVENTA %d NIE MA W LISCIE\n",ev->wd);
     }
-    path = avl_map_get(watch_list,ev->wd);
+    char * path = (char*)avl_map_find(watch_list,&(ev->wd));
+
+    sprintf(src,"%s/%s",path,ev->name);
+    convert_path(src,dst,info);
+
     //printf("\n[EVENT] w: %s\n", path ? path : "(nieznane)");
 
-    /* -------------------------------------------
-       TU WSTAWIASZ WŁASNĄ REAKCJĘ NA ZDARZENIA
-       ------------------------------------------- */
+    /* ----------------------
+       REAKCJA NA ZDARZENIA
+       ---------------------- */
 
-    if (ev->mask & IN_CREATE) {
-        printf("  -> IN_CREATE:  %s\n", ev->name);  
-        // TODO: twoja funkcja on_create(...)
+    if (ev->mask & (IN_CREATE | IN_MODIFY | IN_ATTRIB | IN_MOVED_TO)) {
+        printf("COPYING:  %s to %s\n", src, dst); 
+        copy_entry(src,dst,info);
+        if(ev->mask & IN_ISDIR){
+            add_watch_recursive(info->fd,src,mask);
+        }
     }
-    if (ev->mask & IN_DELETE) {
-        printf("  -> IN_DELETE:  %s\n", ev->name);
-        // TODO: on_delete(...)
+    if (ev->mask & (IN_DELETE | IN_MOVED_FROM)) {
+        printf("DELETING:  %s\n", ev->name);
+        remove_recursive(dst);
     }
-    if (ev->mask & IN_MODIFY) {
-        printf("  -> IN_MODIFY:  %s\n", ev->name);
-        // TODO: on_modify(...)
-    }
-    if (ev->mask & IN_ATTRIB) {
-        printf("  -> IN_ATTRIB:  %s\n", ev->name);
-        // TODO: on_attrib_change(...)
-    }
-    if (ev->mask & IN_MOVED_FROM) {
-        printf("  -> IN_MOVED_FROM: %s (cookie=%u)\n",
-               ev->name, ev->cookie);
-        // TODO: on_moved_from(...)
-    }
-    if (ev->mask & IN_MOVED_TO) {
-        printf("  -> IN_MOVED_TO:   %s (cookie=%u)\n",
-               ev->name, ev->cookie);
-        // TODO: on_moved_to(...)
+    if (ev->mask & (IN_DELETE_SELF | IN_MOVE_SELF)){
+        printf("Removing watch %i\n",ev->wd);
+        avl_map_remove(watch_list,&(ev->wd));
     }
 }
-controlPanel* initialize_watch(copy_info* info){
+controlPanel* initialize_watch(copy_info info){
 
-    watch_list = avl_map_create();
+    watch_list = avl_map_create(compare,clean);
 
     //wspoldzielony panel sterowania
     controlPanel *panel = mmap(NULL, sizeof(controlPanel),PROT_READ | PROT_WRITE,MAP_SHARED | MAP_ANONYMOUS,-1, 0);
     panel->watch = 1;
+    panel->terminate = 0;
+    panel->restore = 0;
     pid_t pid = fork();
     if(pid<0){
         //blad
@@ -140,8 +144,14 @@ controlPanel* initialize_watch(copy_info* info){
     }
     else if(pid == 0){
         // kod dziecka
+
+        //kopiowanie
+
+        copy_entry(info.root_src,info.root_dst,&info);
+
+        //watcher
         int fd = inotify_init1(0);
-        info->fd = fd;
+        info.fd = fd;
         uint32_t mask =
             IN_ALL_EVENTS;
 
@@ -149,37 +159,45 @@ controlPanel* initialize_watch(copy_info* info){
         fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 
         // Dodaj obserwację
-        add_watch_recursive(fd, info->root_src, mask);
+        add_watch_recursive(fd, info.root_src, mask);
 
         char buf[4096]
             __attribute__((aligned(__alignof__(struct inotify_event))));
 
         printf("Started\n");
         int iterations = 0;
-        while (panel->watch) {
+        while (1) {
             iterations++;
-            ssize_t len = read(fd, buf, sizeof(buf));
-            if (len < 0) {
-                if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    // brak zdarzeń — NIE blokuje programu
-                    sleep(0.01); // opcjonalnie: 10 ms, żeby nie mielić CPU
-                    continue;
-                } else {
-                    perror("read");
-                    break;
+            if(panel->watch){
+                ssize_t len = read(fd, buf, sizeof(buf));
+                if (len < 0) {
+                    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                        // brak zdarzeń — NIE blokuje programu
+                    } else {
+                        perror("read");
+                        break;
+                    }
+                }
+                else{
+                    char *ptr = buf;
+                    while (ptr < buf + len) {
+                        struct inotify_event *ev = (struct inotify_event *)ptr;
+                        handle_event(ev, &info,mask);
+                        ptr += sizeof(struct inotify_event) + ev->len;
+                    }
                 }
             }
-
-            char *ptr = buf;
-            while (ptr < buf + len) {
-                struct inotify_event *ev = (struct inotify_event *)ptr;
-                handle_event(ev, info);
-                ptr += sizeof(struct inotify_event) + ev->len;
+            if(panel->terminate){
+                printf("Terminating\n");
+                break;
             }
+            if(panel->restore){
+                break;
+            }
+            sleep(0.01); // opcjonalnie: 10 ms, żeby nie mielić CPU
         }
         printf("Iterations: %i\n",iterations);
-        avl_map_inorder_traversal(watch_list,clean_each);
-
+        close(fd);
         avl_map_destroy(watch_list);
         exit(0);
         return panel;

@@ -18,6 +18,14 @@
 #include <dirent.h>
 #include <string.h>
 #include <limits.h>
+
+
+int convert_path(const char * src, char * dst, const copy_info * info){
+    strcpy(dst,info->root_dst);
+    strcat(dst,src+strlen(info->root_src));
+    return 0;
+}
+
 int get_real_symlink_path(const char *src, char* path){
 
     //Najpierw wydobądźmy dyrektorium
@@ -215,5 +223,58 @@ int copy_directory(const char *src, const char *dst, const copy_info* info)
     }
 
     closedir(dir);
+    return 0;
+}
+
+int remove_recursive(const char *path) {
+    struct stat st;
+
+    if (lstat(path, &st) < 0) {
+        perror("lstat");
+        return -1;
+    }
+
+    // Jeśli to nie katalog usuń bezpośrednio
+    if (!S_ISDIR(st.st_mode)) {
+        if (unlink(path) < 0) {
+            perror("unlink");
+            return -1;
+        }
+        return 0;
+    }
+
+    // Katalog
+    DIR *dir = opendir(path);
+    if (!dir) {
+        perror("opendir");
+        return -1;
+    }
+
+    struct dirent *entry;
+    char fullpath[PATH_MAX];
+
+    while ((entry = readdir(dir)) != NULL) {
+        // pomiń "." i ".."
+        if (strcmp(entry->d_name, ".") == 0 ||
+            strcmp(entry->d_name, "..") == 0)
+            continue;
+
+        snprintf(fullpath, sizeof(fullpath),
+                 "%s/%s", path, entry->d_name);
+
+        if (remove_recursive(fullpath) < 0) {
+            closedir(dir);
+            return -1;
+        }
+    }
+
+    closedir(dir);
+
+    // Usuń pusty katalog
+    if (rmdir(path) < 0) {
+        perror("rmdir");
+        return -1;
+    }
+
     return 0;
 }

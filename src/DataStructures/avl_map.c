@@ -1,21 +1,97 @@
 #include "avl_map.h"
 #include <stdlib.h>
-#include <stdio.h>
 
-// Pomocnicze funkcje
-static int max(int a, int b) {
-    return (a > b) ? a : b;
-}
+// Funkcje pomocnicze
 
+// Obliczanie wysokości węzła
 static int height(AVLNode* node) {
     return node ? node->height : 0;
 }
 
+// Obliczanie współczynnika balansu
 static int balance_factor(AVLNode* node) {
     return node ? height(node->left) - height(node->right) : 0;
 }
 
-static AVLNode* create_node(int key, void* value) {
+// Aktualizacja wysokości węzła
+static void update_height(AVLNode* node) {
+    if (node) {
+        int left_height = height(node->left);
+        int right_height = height(node->right);
+        node->height = (left_height > right_height ? left_height : right_height) + 1;
+    }
+}
+
+// Rotacja w prawo
+static AVLNode* rotate_right(AVLNode* y) {
+    AVLNode* x = y->left;
+    AVLNode* T2 = x->right;
+    
+    x->right = y;
+    y->left = T2;
+    
+    update_height(y);
+    update_height(x);
+    
+    return x;
+}
+
+// Rotacja w lewo
+static AVLNode* rotate_left(AVLNode* x) {
+    AVLNode* y = x->right;
+    AVLNode* T2 = y->left;
+    
+    y->left = x;
+    x->right = T2;
+    
+    update_height(x);
+    update_height(y);
+    
+    return y;
+}
+
+// Balansowanie węzła
+static AVLNode* balance_node(AVLNode* node) {
+    if (!node) return NULL;
+    
+    update_height(node);
+    int bf = balance_factor(node);
+    
+    // Lewa lewa
+    if (bf > 1 && balance_factor(node->left) >= 0) {
+        return rotate_right(node);
+    }
+    
+    // Lewa prawa
+    if (bf > 1 && balance_factor(node->left) < 0) {
+        node->left = rotate_left(node->left);
+        return rotate_right(node);
+    }
+    
+    // Prawa prawa
+    if (bf < -1 && balance_factor(node->right) <= 0) {
+        return rotate_left(node);
+    }
+    
+    // Prawa lewa
+    if (bf < -1 && balance_factor(node->right) > 0) {
+        node->right = rotate_right(node->right);
+        return rotate_left(node);
+    }
+    
+    return node;
+}
+
+// Znajdowanie minimalnego węzła
+static AVLNode* find_min(AVLNode* node) {
+    while (node && node->left) {
+        node = node->left;
+    }
+    return node;
+}
+
+// Tworzenie nowego węzła
+static AVLNode* create_node(Key key, Value value) {
     AVLNode* node = (AVLNode*)malloc(sizeof(AVLNode));
     if (node) {
         node->key = key;
@@ -27,220 +103,148 @@ static AVLNode* create_node(int key, void* value) {
     return node;
 }
 
-// Rotacje AVL
-static AVLNode* rotate_right(AVLNode* y) {
-    AVLNode* x = y->left;
-    AVLNode* T2 = x->right;
-
-    x->right = y;
-    y->left = T2;
-
-    y->height = max(height(y->left), height(y->right)) + 1;
-    x->height = max(height(x->left), height(x->right)) + 1;
-
-    return x;
-}
-
-static AVLNode* rotate_left(AVLNode* x) {
-    AVLNode* y = x->right;
-    AVLNode* T2 = y->left;
-
-    y->left = x;
-    x->right = T2;
-
-    x->height = max(height(x->left), height(x->right)) + 1;
-    y->height = max(height(y->left), height(y->right)) + 1;
-
-    return y;
-}
-
-// Znajdź minimalny węzeł w poddrzewie
-static AVLNode* find_min_node(AVLNode* node) {
-    while (node && node->left) {
-        node = node->left;
-    }
-    return node;
-}
-
-// Wstawianie (rekurencyjne)
-static AVLNode* insert_node(AVLNode* node, int key, void* value, bool* inserted) {
+// Rekurencyjne wstawianie
+static AVLNode* insert_node(AVLNode* node, Key key, Value value, int (*compare)(Key, Key), int* inserted) {
     if (!node) {
-        *inserted = true;
+        *inserted = 1;
         return create_node(key, value);
     }
-
-    if (key < node->key) {
-        node->left = insert_node(node->left, key, value, inserted);
-    } else if (key > node->key) {
-        node->right = insert_node(node->right, key, value, inserted);
+    
+    int cmp = compare(key, node->key);
+    
+    if (cmp < 0) {
+        node->left = insert_node(node->left, key, value, compare, inserted);
+    } else if (cmp > 0) {
+        node->right = insert_node(node->right, key, value, compare, inserted);
     } else {
-        // Klucz już istnieje - aktualizacja wartości
-        node->value = value;
-        *inserted = false;
+        // Klucz już istnieje
+        *inserted = 0;
         return node;
     }
-
-    // Aktualizacja wysokości
-    node->height = 1 + max(height(node->left), height(node->right));
-
-    // Balansowanie drzewa
-    int balance = balance_factor(node);
-
-    // Lewa lewa
-    if (balance > 1 && key < node->left->key) {
-        return rotate_right(node);
-    }
-
-    // Prawa prawa
-    if (balance < -1 && key > node->right->key) {
-        return rotate_left(node);
-    }
-
-    // Lewa prawa
-    if (balance > 1 && key > node->left->key) {
-        node->left = rotate_left(node->left);
-        return rotate_right(node);
-    }
-
-    // Prawa lewa
-    if (balance < -1 && key < node->right->key) {
-        node->right = rotate_right(node->right);
-        return rotate_left(node);
-    }
-
-    return node;
+    
+    return balance_node(node);
 }
 
-// Usuwanie (rekurencyjne)
-static AVLNode* delete_node(AVLNode* root, int key, bool* removed) {
-    if (!root) {
-        *removed = false;
+// Rekurencyjne usuwanie
+static AVLNode* remove_node(AVLNode* node, Key key, int (*compare)(Key, Key), 
+                          void (*free_key_value)(Key, Value), int* removed) {
+    if (!node) {
+        *removed = 0;
         return NULL;
     }
-
-    if (key < root->key) {
-        root->left = delete_node(root->left, key, removed);
-    } else if (key > root->key) {
-        root->right = delete_node(root->right, key, removed);
+    
+    int cmp = compare(key, node->key);
+    
+    if (cmp < 0) {
+        node->left = remove_node(node->left, key, compare, free_key_value, removed);
+    } else if (cmp > 0) {
+        node->right = remove_node(node->right, key, compare, free_key_value, removed);
     } else {
-        *removed = true;
+        // Znaleziono węzeł do usunięcia
+        *removed = 1;
         
-        // Węzeł z jednym lub bez dzieci
-        if (!root->left || !root->right) {
-            AVLNode* temp = root->left ? root->left : root->right;
+        // Jeśli węzeł ma 0 lub 1 dziecko
+        if (!node->left || !node->right) {
+            AVLNode* temp = node->left ? node->left : node->right;
             
-            if (!temp) {
-                temp = root;
-                root = NULL;
+            if (temp) {
+                // Jedno dziecko
+                *node = *temp;
+                free(temp);
             } else {
-                *root = *temp;
+                // Brak dzieci
+                if (free_key_value) {
+                    free_key_value(node->key, node->value);
+                }
+                free(node);
+                return NULL;
             }
-            
-            free(temp);
         } else {
-            // Węzeł z dwoma dziećmi
-            AVLNode* temp = find_min_node(root->right);
-            root->key = temp->key;
-            root->value = temp->value;
-            root->right = delete_node(root->right, temp->key, removed);
+            // Dwoje dzieci - znajdź następnika inorder
+            AVLNode* temp = find_min(node->right);
+            
+            // Zachowaj stare klucze do dealokacji
+            Key old_key = node->key;
+            Value old_value = node->value;
+            
+            // Skopiuj dane następnika
+            node->key = temp->key;
+            node->value = temp->value;
+            
+            // Usuń następnika
+            node->right = remove_node(node->right, temp->key, compare, NULL, removed);
+            
+            // Dealokuj stare dane
+            if (free_key_value) {
+                free_key_value(old_key, old_value);
+            }
         }
     }
-
-    if (!root) return NULL;
-
-    // Aktualizacja wysokości
-    root->height = 1 + max(height(root->left), height(root->right));
-
-    // Balansowanie drzewa
-    int balance = balance_factor(root);
-
-    // Lewa lewa
-    if (balance > 1 && balance_factor(root->left) >= 0) {
-        return rotate_right(root);
-    }
-
-    // Lewa prawa
-    if (balance > 1 && balance_factor(root->left) < 0) {
-        root->left = rotate_left(root->left);
-        return rotate_right(root);
-    }
-
-    // Prawa prawa
-    if (balance < -1 && balance_factor(root->right) <= 0) {
-        return rotate_left(root);
-    }
-
-    // Prawa lewa
-    if (balance < -1 && balance_factor(root->right) > 0) {
-        root->right = rotate_right(root->right);
-        return rotate_left(root);
-    }
-
-    return root;
-}
-
-// Wyszukiwanie (rekurencyjne)
-static AVLNode* search_node(AVLNode* node, int key) {
-    if (!node || node->key == key) {
-        return node;
-    }
     
-    if (key < node->key) {
-        return search_node(node->left, key);
-    }
-    
-    return search_node(node->right, key);
+    return balance_node(node);
 }
 
-// Przechodzenie inorder (rekurencyjne)
-static void inorder_traversal_node(AVLNode* node, void (*func)(int, void*)) {
-    if (node) {
-        inorder_traversal_node(node->left, func);
-        func(node->key, node->value);
-        inorder_traversal_node(node->right, func);
+// Rekurencyjne wyszukiwanie
+static AVLNode* find_node(AVLNode* node, Key key, int (*compare)(Key, Key)) {
+    while (node) {
+        int cmp = compare(key, node->key);
+        if (cmp == 0) {
+            return node;
+        } else if (cmp < 0) {
+            node = node->left;
+        } else {
+            node = node->right;
+        }
     }
+    return NULL;
 }
 
-// Usuwanie wszystkich węzłów (rekurencyjne)
-static void clear_nodes(AVLNode* node) {
+// Rekurencyjne czyszczenie
+static void clear_tree(AVLNode* node, void (*free_key_value)(Key, Value)) {
     if (node) {
-        clear_nodes(node->left);
-        clear_nodes(node->right);
+        clear_tree(node->left, free_key_value);
+        clear_tree(node->right, free_key_value);
+        if (free_key_value) {
+            free_key_value(node->key, node->value);
+        }
         free(node);
+    }
+}
+
+// Rekurencyjna iteracja
+static void inorder_foreach(AVLNode* node, void (*callback)(Key, Value, void*), void* user_data) {
+    if (node) {
+        inorder_foreach(node->left, callback, user_data);
+        callback(node->key, node->value, user_data);
+        inorder_foreach(node->right, callback, user_data);
     }
 }
 
 // Implementacja interfejsu publicznego
 
-AVLMap* avl_map_create() {
+AVLMap* avl_map_create(int (*compare_keys)(Key, Key), void (*free_key_value)(Key, Value)) {
     AVLMap* map = (AVLMap*)malloc(sizeof(AVLMap));
     if (map) {
         map->root = NULL;
         map->size = 0;
+        map->compare_keys = compare_keys;
+        map->free_key_value = free_key_value;
     }
     return map;
 }
 
 void avl_map_destroy(AVLMap* map) {
     if (map) {
-        avl_map_clear(map);
+        clear_tree(map->root, map->free_key_value);
         free(map);
     }
 }
 
-void avl_map_clear(AVLMap* map) {
-    if (map) {
-        clear_nodes(map->root);
-        map->root = NULL;
-        map->size = 0;
-    }
-}
-
-bool avl_map_insert(AVLMap* map, int key, void* value) {
-    if (!map) return false;
+int avl_map_insert(AVLMap* map, Key key, Value value) {
+    if (!map) return 0;
     
-    bool inserted = false;
-    map->root = insert_node(map->root, key, value, &inserted);
+    int inserted = 0;
+    map->root = insert_node(map->root, key, value, map->compare_keys, &inserted);
     
     if (inserted) {
         map->size++;
@@ -249,18 +253,11 @@ bool avl_map_insert(AVLMap* map, int key, void* value) {
     return inserted;
 }
 
-void* avl_map_get(AVLMap* map, int key) {
-    if (!map) return NULL;
+int avl_map_remove(AVLMap* map, Key key) {
+    if (!map) return 0;
     
-    AVLNode* node = search_node(map->root, key);
-    return node ? node->value : NULL;
-}
-
-bool avl_map_remove(AVLMap* map, int key) {
-    if (!map) return false;
-    
-    bool removed = false;
-    map->root = delete_node(map->root, key, &removed);
+    int removed = 0;
+    map->root = remove_node(map->root, key, map->compare_keys, map->free_key_value, &removed);
     
     if (removed) {
         map->size--;
@@ -269,46 +266,27 @@ bool avl_map_remove(AVLMap* map, int key) {
     return removed;
 }
 
-bool avl_map_contains(AVLMap* map, int key) {
-    return map && search_node(map->root, key) != NULL;
+Value avl_map_find(AVLMap* map, Key key) {
+    if (!map) return NULL;
+    
+    AVLNode* node = find_node(map->root, key, map->compare_keys);
+    return node ? node->value : NULL;
 }
 
-int avl_map_size(AVLMap* map) {
+int avl_map_contains(AVLMap* map, Key key) {
+    return avl_map_find(map, key) != NULL;
+}
+
+size_t avl_map_size(AVLMap* map) {
     return map ? map->size : 0;
 }
 
-bool avl_map_is_empty(AVLMap* map) {
-    return map ? map->size == 0 : true;
+int avl_map_is_empty(AVLMap* map) {
+    return map ? map->size == 0 : 1;
 }
 
-void avl_map_inorder_traversal(AVLMap* map, void (*func)(int, void*)) {
-    if (map && func) {
-        inorder_traversal_node(map->root, func);
+void avl_map_foreach(AVLMap* map, void (*callback)(Key, Value, void*), void* user_data) {
+    if (map && callback) {
+        inorder_foreach(map->root, callback, user_data);
     }
-}
-
-int avl_map_min_key(AVLMap* map) {
-    if (!map || !map->root) {
-        return -1; // lub inna wartość oznaczająca błąd
-    }
-    
-    AVLNode* current = map->root;
-    while (current->left) {
-        current = current->left;
-    }
-    
-    return current->key;
-}
-
-int avl_map_max_key(AVLMap* map) {
-    if (!map || !map->root) {
-        return -1; // lub inna wartość oznaczająca błąd
-    }
-    
-    AVLNode* current = map->root;
-    while (current->right) {
-        current = current->right;
-    }
-    
-    return current->key;
 }

@@ -1,12 +1,16 @@
 #ifndef AVL_MAP_H
 #define AVL_MAP_H
 
-#include <stdbool.h>
+#include <stddef.h>
+
+// Typy dla klucza i wartości (wskaźniki na dowolny typ)
+typedef void* Key;
+typedef void* Value;
 
 // Struktura węzła AVL
 typedef struct AVLNode {
-    int key;
-    void* value;
+    Key key;
+    Value value;
     struct AVLNode* left;
     struct AVLNode* right;
     int height;
@@ -15,27 +19,41 @@ typedef struct AVLNode {
 // Struktura mapy AVL
 typedef struct {
     AVLNode* root;
-    int size;
+    size_t size;
+    
+    // Funkcje dostarczane przez użytkownika
+    int (*compare_keys)(Key, Key);          // porównywanie kluczy
+    void (*free_key_value)(Key, Value);    // dealokacja klucza i wartości
 } AVLMap;
 
-// Operacje na mapie
-AVLMap* avl_map_create();
+// Inicjalizacja mapy
+AVLMap* avl_map_create(
+    int (*compare_keys)(Key, Key),
+    void (*free_key_value)(Key, Value)
+);
+
+// Usunięcie mapy i zwolnienie pamięci
 void avl_map_destroy(AVLMap* map);
-void avl_map_clear(AVLMap* map);
 
-// Podstawowe operacje
-bool avl_map_insert(AVLMap* map, int key, void* value);
-void* avl_map_get(AVLMap* map, int key);
-bool avl_map_remove(AVLMap* map, int key);
-bool avl_map_contains(AVLMap* map, int key);
-int avl_map_size(AVLMap* map);
-bool avl_map_is_empty(AVLMap* map);
+// Wstawienie pary klucz-wartość
+int avl_map_insert(AVLMap* map, Key key, Value value);
 
-// Iteracja
-void avl_map_inorder_traversal(AVLMap* map, void (*func)(int, void*));
+// Usunięcie wartości na podstawie klucza
+int avl_map_remove(AVLMap* map, Key key);
 
-// Operacje min/max
-int avl_map_min_key(AVLMap* map);
-int avl_map_max_key(AVLMap* map);
+// Wyszukanie wartości na podstawie klucza
+Value avl_map_find(AVLMap* map, Key key);
 
-#endif
+// Sprawdzenie czy klucz istnieje
+int avl_map_contains(AVLMap* map, Key key);
+
+// Rozmiar mapy
+size_t avl_map_size(AVLMap* map);
+
+// Czy mapa jest pusta
+int avl_map_is_empty(AVLMap* map);
+
+// Iteracja po wszystkich elementach
+void avl_map_foreach(AVLMap* map, void (*callback)(Key, Value, void*), void* user_data);
+
+#endif // AVL_MAP_H
