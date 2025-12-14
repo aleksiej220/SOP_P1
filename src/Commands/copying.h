@@ -9,12 +9,11 @@ extern "C" {
 #endif
 
 // Informacje potrzebne operacjom kopiowania
-struct copy_info {
-    int fd;                // deskryptor inotify (opcjonalny)
+struct copy_info {  
+    int fd;             // deskryptor inotify (opcjonalny)
     char* root_src;
     char* root_dst;
 };
-
 typedef struct copy_info copy_info;
 
 // Utils

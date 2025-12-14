@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,22 +9,23 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <sys/wait.h>
-#include <fcntl.h>
+#include <fcntl.h> 
 #include "../DataStructures/avl_map.h"
 #include "copying.h"
 #include "controlPanel.h"
 
-#define MAX_WATCHES 8192   // Możesz zwiększyć
-
-// Struktura przechowująca informację (wd -> path)
-struct WatchEntry{
-    int wd;
-    char path[1024];
-};
-typedef struct WatchEntry WatchEntry;
+#define MAX_WATCHES INT32_MAX   // Możesz zwiększyć
+#define MAX_DIGITS 20
+// struktura przechowujaca wd->path
+//zmienne procesowe globalne, ale ustawiane tylko dla tego procesu
 AVLMap *watch_list;
-int watch_count = 0;
 
+
+void clean_each(int key, void* value) {
+    free(value);
+}
+
+int watch_count = 0;
 /* ---------------------------------------------------------
    Dodaj WATCH i zapamiętaj go
 --------------------------------------------------------- */
@@ -37,9 +39,7 @@ int add_watch(int fd, const char *path, uint32_t mask)
     }
 
     if (watch_count < MAX_WATCHES) {
-        watch_list[watch_count].wd = wd;
-        strncpy(watch_list[watch_count].path, path,
-                sizeof(watch_list[watch_count].path) - 1);
+        avl_map_insert(watch_list,wd,strdup(path));
         watch_count++;
     }
 
@@ -87,15 +87,12 @@ void add_watch_recursive(int fd, const char *dirpath, uint32_t mask)
 void handle_event(struct inotify_event* ev, const copy_info* info)
 {
     // Znajdź ścieżkę powiązaną z tym wd
-    const char *path = NULL;
-    for (int i = 0; i < watch_count; i++) {
-        if (watch_list[i].wd == ev->wd) {
-            path = watch_list[i].path;
-            break;
-        }
+    char *path = NULL;
+    if(!avl_map_contains(watch_list,ev->wd)){
+        printf("EVENTA %d NIE MA W LISCIE\n",ev->wd);
     }
-
-    printf("\n[EVENT] w: %s\n", path ? path : "(nieznane)");
+    path = avl_map_get(watch_list,ev->wd);
+    //printf("\n[EVENT] w: %s\n", path ? path : "(nieznane)");
 
     /* -------------------------------------------
        TU WSTAWIASZ WŁASNĄ REAKCJĘ NA ZDARZENIA
@@ -117,18 +114,6 @@ void handle_event(struct inotify_event* ev, const copy_info* info)
         printf("  -> IN_ATTRIB:  %s\n", ev->name);
         // TODO: on_attrib_change(...)
     }
-    if (ev->mask & IN_OPEN) {
-        printf("  -> IN_OPEN:    %s\n", ev->name);
-        // TODO: on_open(...)
-    }
-    if (ev->mask & IN_CLOSE_WRITE) {
-        printf("  -> IN_CLOSE_WRITE: %s\n", ev->name);
-        // TODO: on_close_write(...)
-    }
-    if (ev->mask & IN_CLOSE_NOWRITE) {
-        printf("  -> IN_CLOSE_NOWRITE: %s\n", ev->name);
-        // TODO: on_close_nowrite(...)
-    }
     if (ev->mask & IN_MOVED_FROM) {
         printf("  -> IN_MOVED_FROM: %s (cookie=%u)\n",
                ev->name, ev->cookie);
@@ -139,22 +124,6 @@ void handle_event(struct inotify_event* ev, const copy_info* info)
                ev->name, ev->cookie);
         // TODO: on_moved_to(...)
     }
-    if (ev->mask & IN_DELETE_SELF) {
-        printf("  -> IN_DELETE_SELF\n");
-        // TODO: on_delete_self(...)
-    }
-    if (ev->mask & IN_MOVE_SELF) {
-        printf("  -> IN_MOVE_SELF\n");
-        // TODO: on_move_self(...)
-    }
-    if (ev->mask & IN_UNMOUNT) {
-        printf("  -> IN_UNMOUNT\n");
-        // TODO: on_unmount(...)
-    }
-    if (ev->mask & IN_Q_OVERFLOW) {
-        printf("  -> IN_Q_OVERFLOW (kolejka przepełniona!)\n");
-        // TODO: on_overflow(...)
-    }
 }
 controlPanel* initialize_watch(copy_info* info){
 
@@ -163,9 +132,7 @@ controlPanel* initialize_watch(copy_info* info){
     //wspoldzielony panel sterowania
     controlPanel *panel = mmap(NULL, sizeof(controlPanel),PROT_READ | PROT_WRITE,MAP_SHARED | MAP_ANONYMOUS,-1, 0);
     panel->watch = 1;
-    printf("PRZED\n");
     pid_t pid = fork();
-    printf("PO\n");
     if(pid<0){
         //blad
         printf("BLAD FORKOWANIA\n");
@@ -211,6 +178,9 @@ controlPanel* initialize_watch(copy_info* info){
             }
         }
         printf("Iterations: %i\n",iterations);
+        avl_map_inorder_traversal(watch_list,clean_each);
+
+        avl_map_destroy(watch_list);
         exit(0);
         return panel;
     }
