@@ -139,6 +139,8 @@ controlPanel* initialize_watch(copy_info info){
     if(pid<0){
         //błąd
         printf("BLAD FORKOWANIA\n");
+        avl_map_destroy(watch_list);
+        watch_list = NULL;
         return panel;
     }
     else if(pid == 0){
@@ -210,6 +212,8 @@ controlPanel* initialize_watch(copy_info info){
     }
     else{
         //kod rodzica
+        avl_map_destroy(watch_list);
+        watch_list = NULL;
         return panel;
     }
 }

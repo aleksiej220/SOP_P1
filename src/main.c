@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <signal.h>
 #define SLEEP_TIME 0.01
 #define MAX_LINE 1024
 #define MAX_TOKENS 64
@@ -38,6 +39,23 @@ void terminator(Key key, Value val, void* inf){
     {
         sleep(SLEEP_TIME);
     }
+}
+
+/* Flaga ustawiana przez handler sygnałów (sig_atomic_t jest bezpieczny dla handlerów) */
+static volatile sig_atomic_t stop_requested = 0;
+
+/* Handler sygnałów — ustawia flagę i wypisuje krótką informację (write jest async-signal-safe) */
+void request_shutdown(int signum){
+    const char msg[] = "Otrzymano sygnał zakończenia, przygotowuję zamknięcie...\n";
+    write(STDERR_FILENO, msg, sizeof(msg)-1);
+    stop_requested = 1;
+}
+
+/* Funkcja wykonująca zamknięcie programu w sposób uporządkowany */
+void cleanup_and_exit(AVLMap* copies){
+    avl_map_foreach(copies, terminator, NULL);
+    avl_map_destroy(copies);
+    exit(0);
 }
 
 int connect(const char* a, const char* b, char* wynik) {
@@ -120,10 +138,37 @@ int main(void)
     char *tokens[MAX_TOKENS];
     int token_count = 0;
     write_commands();
+
+    /* Rejestracja handlerów SIGINT i SIGTERM */
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = request_shutdown;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0; /* nie używamy SA_RESTART, chcemy by syscalle (fgets) mogły zostać przerwane */
+    sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
+
     while(1){
         printf("Podaj polecenie:\n");
 
         if (!fgets(line, sizeof(line), stdin)) {
+            if (stop_requested) {
+                printf("\nOtrzymano sygnał zakończenia. Kończę...\n");
+                cleanup_and_exit(copies);
+            }
+            if (feof(stdin)) {
+                /* EOF na stdin — kończymy */
+                break;
+            }
+            if (ferror(stdin)) {
+                if (errno == EINTR) {
+                    /* przerwane przez sygnał, spróbuj ponownie */
+                    clearerr(stdin);
+                    continue;
+                }
+                perror("fgets");
+                return 1;
+            }
             return 1;
         }
 
@@ -132,6 +177,12 @@ int main(void)
 
         // tokenizacja
         token_count = tokenize_with_quotes(line, tokens, MAX_TOKENS);
+
+        if (stop_requested) {
+            printf("Otrzymano sygnał zakończenia. Kończę...\n");
+            cleanup_and_exit(copies);
+        }
+
         // sprawdzamy komendę
         if (strcmp(tokens[0], "add") == 0) {
             if (token_count < 3) {
@@ -165,7 +216,6 @@ int main(void)
                 else{
                     /* zamykamy uchwyt do katalogu źródłowego przed otwarciem katalogu docelowego,
                        żeby nie tracić referencji i nie doprowadzać do wycieku */
-                    closedir(dir);
                     dir = opendir(target_path);
                     if(!dir){
                         printf("%s to nie katalog\n",target_path);
@@ -174,13 +224,12 @@ int main(void)
                     else{
                         if(!is_dir_empty(dir)){
                             printf("Katalog %s nie jest pusty\n",target_path);
-                            closedir(dir);
                             continue;
                         }
                     }
-                    /* nie potrzebujemy już uchwytu do katalogu docelowego */
-                    closedir(dir);
                 }
+                /* nie potrzebujemy już uchwytu do katalogu docelowego */
+                closedir(dir);
                 //ostatni check czy nie jest jeden w drugim
                 if(is_descendant_of(op2,op1) || is_descendant_of(op2,op1)){
                     if(created_dir){
@@ -280,10 +329,8 @@ int main(void)
                 printf("Błąd: za dużo argumentów\n");
                 continue;
             }
-            //tutaj zabijamy cały program
-            avl_map_foreach(copies,terminator,NULL);
-            avl_map_destroy(copies);
-            exit(0);
+            /* Zamykanie uporządkowane */
+            cleanup_and_exit(copies);
         }
         else{
             printf("Nieznane polecenie: %s\n", tokens[0]);
