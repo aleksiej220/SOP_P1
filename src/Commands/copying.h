@@ -3,6 +3,7 @@
 #define PATH_LEN 4096
 #include <limits.h>
 #include <sys/types.h>
+#include <dirent.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -17,6 +18,7 @@ struct copy_info {
 typedef struct copy_info copy_info;
 
 // Utils
+int is_dir_empty(DIR *dir);
 int convert_path(const char * src, char * dst, const copy_info * info);
 int get_real_symlink_path(const char *src, char* path);
 int is_descendant_of(const char *A, const char *B);

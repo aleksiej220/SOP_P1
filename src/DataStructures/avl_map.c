@@ -146,9 +146,14 @@ static AVLNode* remove_node(AVLNode* node, Key key, int (*compare)(Key, Key),
         // Jeśli węzeł ma 0 lub 1 dziecko
         if (!node->left || !node->right) {
             AVLNode* temp = node->left ? node->left : node->right;
-            
+
             if (temp) {
                 // Jedno dziecko
+                // Najpierw zwolnij zasoby przechowywane w obecnym węźle,
+                // bo zostaną one nadpisane przez kopię dziecka.
+                if (free_key_value) {
+                    free_key_value(node->key, node->value);
+                }
                 *node = *temp;
                 free(temp);
             } else {

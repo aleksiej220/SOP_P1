@@ -20,6 +20,23 @@
 #include <limits.h>
 
 
+#define BUF_MAX_SIZE 8192
+
+int is_dir_empty(DIR *dir)
+{
+    struct dirent *entry;
+
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_name[0] == '.')
+            continue;
+
+        return 0; // znaleziono plik/katalog
+    }
+    return 1; // brak wpisów
+}
+
+
+
 int convert_path(const char * src, char * dst, const copy_info * info){
     strcpy(dst,info->root_dst);
     strcat(dst,src+strlen(info->root_src));
@@ -40,7 +57,7 @@ int get_real_symlink_path(const char *src, char* path){
     target[len] = '\0';
 
     // Trzeba zapisać poprzednie dyrektorium przed zmianą
-    char pwd[4096];
+    char pwd[PATH_MAX];
     if (getcwd(pwd,sizeof(pwd)) == NULL) return -1;
 
     // Potem zmienić na to odpowiednie, odczytać ścieżke, a następnie wrócić 
@@ -82,13 +99,10 @@ int is_descendant_of(const char *A, const char *B){
 
     return 0;
 }
-
 int copy_file(const char *src, const char *dst, const copy_info* info)
 {
-    //Proste przepisanie uzywajace 8192 bufora
-    //Możliwe że będzie trzeba go powiększać
     int in, out;
-    char buf[8192];
+    char buf[BUF_MAX_SIZE];
     ssize_t n;
 
     in = open(src, O_RDONLY);

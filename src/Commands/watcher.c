@@ -192,13 +192,20 @@ controlPanel* initialize_watch(copy_info info){
                 break;
             }
             if(panel->restore){
+                remove_recursive(info.root_src);
+                copy_info info2;
+                strcpy(info2.root_src , info.root_dst);
+                strcpy(info2.root_dst , info.root_src);
+                copy_entry(info2.root_src,info2.root_dst,&info2);
+                panel->restore = 0;
                 break;
             }
             sleep(0.01); // opcjonalnie: 10 ms, żeby nie mielić CPU
         }
-        printf("Iterations: %i\n",iterations);
+        //printf("Iterations: %i\n",iterations);
         close(fd);
         avl_map_destroy(watch_list);
+        panel->terminate = 0;
         exit(0);
         return panel;
     }
