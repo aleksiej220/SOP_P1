@@ -1,9 +1,3 @@
-
-/*
-    Autor kodu: Alex Siurnicki
-    Indeks: 339092
-*/
-
 #define _POSIX_C_SOURCE 200809L
 #define _XOPEN_SOURCE 700
 #include "Commands/copying.h"
@@ -17,8 +11,15 @@
 #include <errno.h>
 #include <unistd.h>
 #include <dirent.h>
+#define SLEEP_TIME 0.01
 #define MAX_LINE 1024
 #define MAX_TOKENS 64
+
+/*
+    Autor kodu: Alex Siurnicki
+    Indeks: 339092
+*/
+
 
 int compare_keys(Key a, Key b){
     return strcmp((char*)a,(char*)b);
@@ -35,7 +36,7 @@ void terminator(Key key, Value val, void* inf){
     panel->terminate = 1;
     while (panel->terminate)
     {
-        sleep(0.01);
+        sleep(SLEEP_TIME);
     }
 }
 
@@ -58,8 +59,8 @@ int disconnect(const char* input, char* a, char* b) {
     return 1;
 }
 void list_iteration(Key key, Value val, Value misc){
-    char str1[100];
-    char str2[100];
+    char str1[PATH_MAX];
+    char str2[PATH_MAX];
     disconnect(key,str1,str2);
     printf("<%s> do <%s>\n",str1,str2);
 }
@@ -142,12 +143,11 @@ int main(void)
             // wszystkie kolejne to ścieżki docelowe
             for (int i = 2; i < token_count; i++) {
                 char *target_path = tokens[i];
-
+                int created_dir = 0;
                 printf("Obsługa '%s' do '%s':\n",source_path, target_path);
                 copy_info info;
                 char * op1 = realpath(source_path,info.root_src);
                 char * op2 = realpath(target_path,info.root_dst);
-                //
                 DIR *dir;
                 dir = opendir(source_path);
                 if(!dir || op1==NULL){
@@ -159,6 +159,7 @@ int main(void)
                         printf("Niepoprawny adres: %s\n",target_path);
                         continue;
                     }
+                    created_dir = 1;
                     op2 = realpath(target_path,info.root_dst);
                 }
                 else{
@@ -179,6 +180,14 @@ int main(void)
                     }
                     /* nie potrzebujemy już uchwytu do katalogu docelowego */
                     closedir(dir);
+                }
+                //ostatni check czy nie jest jeden w drugim
+                if(is_descendant_of(op2,op1) || is_descendant_of(op2,op1)){
+                    if(created_dir){
+                        remove_recursive(target_path);
+                    }
+                    printf("Nie można tworzyć kopii jeden w drugim\n");
+                    continue;
                 }
                 char str[PATH_MAX];
                 connect(info.root_src,info.root_dst,str);

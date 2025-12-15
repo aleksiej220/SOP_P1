@@ -13,15 +13,14 @@
 #include "../DataStructures/avl_map.h"
 #include "copying.h"
 #include "controlPanel.h"
-
-#define MAX_WATCHES INT32_MAX   // Możesz zwiększyć
-#define MAX_DIGITS 20 //mak
+#define SLEEP_TIME 0.01
+#define MAX_WATCHES 2048   // Możesz zwiększyć
 // struktura przechowujaca wd->path
 //zmienne procesowe globalne, ale ustawiane tylko dla tego procesu
 AVLMap *watch_list;
 
 void clean(Key key, Value value) {
-    printf("CLEANING %i,%s\n",*(int*)key,(char*) value);
+    //printf("CLEANING %i,%s\n",*(int*)key,(char*) value);
     free(key);
     free(value);
 }
@@ -49,7 +48,7 @@ int add_watch(int fd, const char *path, uint32_t mask)
         watch_count++;
     }
 
-    printf("[WATCH] %s (wd=%d)\n", path, wd);
+    //printf("[WATCH] %s (wd=%d)\n", path, wd);
     return wd;
 }
 
@@ -93,8 +92,8 @@ void add_watch_recursive(int fd, const char *dirpath, uint32_t mask)
 void handle_event(struct inotify_event* ev, const copy_info* info,uint32_t mask)
 {
 
-    char src[4096];
-    char dst[4096];
+    char src[PATH_MAX];
+    char dst[PATH_MAX];
     // Znajdź ścieżkę powiązaną z tym wd
     if(!avl_map_contains(watch_list,&(ev->wd))){
         return;
@@ -112,18 +111,18 @@ void handle_event(struct inotify_event* ev, const copy_info* info,uint32_t mask)
        ---------------------- */
 
     if (ev->mask & (IN_CREATE | IN_MODIFY | IN_ATTRIB | IN_MOVED_TO)) {
-        printf("COPYING:  %s to %s\n", src, dst); 
+        //printf("COPYING:  %s to %s\n", src, dst); 
         copy_entry(src,dst,info);
         if(ev->mask & IN_ISDIR){
             add_watch_recursive(info->fd,src,mask);
         }
     }
     if (ev->mask & (IN_DELETE | IN_MOVED_FROM)) {
-        printf("DELETING:  %s\n", ev->name);
+        //printf("DELETING:  %s\n", ev->name);
         remove_recursive(dst);
     }
     if (ev->mask & (IN_DELETE_SELF | IN_MOVE_SELF)){
-        printf("Removing watch %i\n",ev->wd);
+        //printf("Removing watch %i\n",ev->wd);
         avl_map_remove(watch_list,&(ev->wd));
     }
 }
@@ -131,14 +130,14 @@ controlPanel* initialize_watch(copy_info info){
 
     watch_list = avl_map_create(compare,clean);
 
-    //wspoldzielony panel sterowania
+    //Wspóldzielony panel sterowania
     controlPanel *panel = mmap(NULL, sizeof(controlPanel),PROT_READ | PROT_WRITE,MAP_SHARED | MAP_ANONYMOUS,-1, 0);
     panel->watch = 1;
     panel->terminate = 0;
     panel->restore = 0;
     pid_t pid = fork();
     if(pid<0){
-        //blad
+        //błąd
         printf("BLAD FORKOWANIA\n");
         return panel;
     }
@@ -164,7 +163,7 @@ controlPanel* initialize_watch(copy_info info){
         char buf[4096]
             __attribute__((aligned(__alignof__(struct inotify_event))));
 
-        printf("Started\n");
+        //printf("Started\n");
         int iterations = 0;
         while (1) {
             iterations++;
@@ -188,7 +187,7 @@ controlPanel* initialize_watch(copy_info info){
                 }
             }
             if(panel->terminate){
-                printf("Terminating\n");
+                //printf("Terminating\n");
                 break;
             }
             if(panel->restore){
@@ -200,7 +199,7 @@ controlPanel* initialize_watch(copy_info info){
                 panel->restore = 0;
                 break;
             }
-            sleep(0.01); // opcjonalnie: 10 ms, żeby nie mielić CPU
+            sleep(SLEEP_TIME); // żeby nie mielić CPU
         }
         //printf("Iterations: %i\n",iterations);
         close(fd);
